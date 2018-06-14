@@ -375,7 +375,7 @@ class TfPoseEstimator:
         
         peaks, heatMat_ups, pafMat_ups = self.persistent_sess.run(
             [self.tensor_peaks, self.tensor_heatMat_up, self.tensor_pafMat_up], feed_dict={
-                self.tensor_image: [npimg_l], self.upsample_size: upsample_size
+                self.tensor_image: npimg_l, self.upsample_size: upsample_size
             })
         
         if isinstance(npimg_i, list):
