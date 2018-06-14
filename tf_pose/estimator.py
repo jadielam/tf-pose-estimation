@@ -341,38 +341,60 @@ class TfPoseEstimator:
         else:
             return cropped
 
-    def inference(self, npimg, resize_to_default=True, upsample_size=1.0):
-        if npimg is None:
+    def inference(self, npimg_i, resize_to_default=True, upsample_size=1.0):
+        '''
+        Arguments:
+        - npimg_i: can be a simple image or a list of image. If it is a list of image,
+                 all images are assumed to have the same size.
+        '''
+        
+        if npimg_i is None:
             raise Exception('The image is not valid. Please check your image exists.')
+        
+        if not isinstance(npimg_i, list):
+            npimg_l = [npimg_i]
+        else:
+            npimg_l = npimg_i
+        
+        if len(npimg_l) == 0:
+            raise Exception('The number of images submitted is 0')
 
         if resize_to_default:
             upsample_size = [int(self.target_size[1] / 8 * upsample_size), int(self.target_size[0] / 8 * upsample_size)]
         else:
-            upsample_size = [int(npimg.shape[0] / 8 * upsample_size), int(npimg.shape[1] / 8 * upsample_size)]
-
+            upsample_size = [int(npimg_l[0].shape[0] / 8 * upsample_size), int(npimg_l[0].shape[1] / 8 * upsample_size)]
+        
         if self.tensor_image.dtype == tf.quint8:
             # quantize input image
-            npimg = TfPoseEstimator._quantize_img(npimg)
-            pass
+            npimg_l = [TfPoseEstimator._quantize_img(npimg) for npimg in npimg_l]
 
-        logger.debug('inference+ original shape=%dx%d' % (npimg.shape[1], npimg.shape[0]))
-        img = npimg
+        #TODO: Start here.
+        #logger.debug('inference+ original shape=%dx%d' % (npimg.shape[1], npimg.shape[0]))
         if resize_to_default:
-            img = self._get_scaled_img(npimg, None)[0][0]
-        peaks, heatMat_up, pafMat_up = self.persistent_sess.run(
+            npimg_l = [self._get_scaled_img(npimg, None)[0][0] for npimg in npimg_l]
+        
+        peaks, heatMat_ups, pafMat_ups = self.persistent_sess.run(
             [self.tensor_peaks, self.tensor_heatMat_up, self.tensor_pafMat_up], feed_dict={
-                self.tensor_image: [img], self.upsample_size: upsample_size
+                self.tensor_image: [npimg_l], self.upsample_size: upsample_size
             })
-        peaks = peaks[0]
-        self.heatMat = heatMat_up[0]
-        self.pafMat = pafMat_up[0]
-        logger.debug('inference- heatMat=%dx%d pafMat=%dx%d' % (
-        self.heatMat.shape[1], self.heatMat.shape[0], self.pafMat.shape[1], self.pafMat.shape[0]))
+        
+        if isinstance(npimg_i, list):
+            humans_l = []
+            for idx, (peak, heatMat, pafMat) in enumerate(zip(peaks, heatMat_ups, pafMat_ups)):
+                humans = PoseEstimator.estimate_paf(peak, heatMat, pafMat)
+                humans_l.append(humans)
+            return humans_l
+        else:
+            peak = peaks[0]
+            self.heatMat = heatMat_ups[0]
+            self.pafMat = pafMat_ups[0]
+            logger.debug('inference- heatMat=%dx%d pafMat=%dx%d' % (
+            self.heatMat.shape[1], self.heatMat.shape[0], self.pafMat.shape[1], self.pafMat.shape[0]))
 
-        t = time.time()
-        humans = PoseEstimator.estimate_paf(peaks, self.heatMat, self.pafMat)
-        logger.debug('estimate time=%.5f' % (time.time() - t))
-        return humans
+            t = time.time()
+            humans = PoseEstimator.estimate_paf(peak, self.heatMat, self.pafMat)
+            logger.debug('estimate time=%.5f' % (time.time() - t))
+            return humans
 
 
 if __name__ == '__main__':
